@@ -59,6 +59,12 @@ Use the **Try sample CSV** link on the landing page for instant demo—no file n
 
 ---
 
+## Cron / Cleanup (Disabled on Hobby)
+
+The dataset cleanup job (`/api/cron/cleanup`) is **not scheduled** on Vercel Hobby: Hobby allows only one cron run per day, while cleanup needs to run every 15 minutes. The route is still available—call it manually or use an external cron service (e.g. [cron-job.org](https://cron-job.org)) pointing at `https://your-domain.vercel.app/api/cron/cleanup` with `Authorization: Bearer <CRON_SECRET>`. Upgrade to Vercel Pro to use built-in crons.
+
+---
+
 ## Demo Readiness Checklist
 
 - [ ] Supabase project created; `.env.local` configured
@@ -66,7 +72,6 @@ Use the **Try sample CSV** link on the landing page for instant demo—no file n
 - [ ] Migration `00001_initial_schema.sql` run
 - [ ] GitHub OAuth configured in Supabase (optional: Google)
 - [ ] Stripe Price ID and Webhook set for Pro tier
-- [ ] `CRON_SECRET` set in Vercel for cleanup job
 - [ ] Sample CSV at `/sample.csv` for zero-friction demo
 
 ---

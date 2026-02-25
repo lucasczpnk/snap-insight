@@ -3,8 +3,11 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
  * Cleanup worker: deletes expired datasets and their Supabase Storage objects.
- * Invoke via Vercel Cron or external cron (e.g. every 15 min).
- * Optional: set CRON_SECRET and send Authorization: Bearer <CRON_SECRET>.
+ *
+ * CRON DISABLED: Vercel Hobby plan allows only one cron run per day. This job
+ * needs to run every 15 min, which requires Pro. The route remains callable
+ * manually (GET with optional Authorization: Bearer CRON_SECRET). Use an
+ * external cron service (e.g. cron-job.org) to hit this endpoint on a schedule.
  */
 export async function GET(request: Request) {
   const authHeader = request.headers.get("authorization");
