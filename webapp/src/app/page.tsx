@@ -531,9 +531,24 @@ export default function Home() {
                   <Upload className="w-10 h-10 text-indigo-400" />
                 </div>
                 <h3 className="text-2xl font-semibold mb-2">Drop your CSV file here</h3>
-                <p className="text-gray-400 mb-6">or click to browse • Max 10MB for free tier</p>
-                <input type="file" accept=".csv" onChange={handleFileSelect} className="hidden" id="file-upload" />
-                <label htmlFor="file-upload" className="btn-primary inline-block cursor-pointer">Select File</label>
+                <p className="text-gray-400 mb-2">or click to browse • Max 10MB for free tier</p>
+                <p className="text-gray-500 text-xs mb-4">Retention: Free 15 min · Auth 24h · Pro 30 days</p>
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <input type="file" accept=".csv" onChange={handleFileSelect} className="hidden" id="file-upload" />
+                  <label htmlFor="file-upload" className="btn-primary inline-block cursor-pointer">Select File</label>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const res = await fetch("/sample.csv");
+                      const blob = await res.blob();
+                      const file = new File([blob], "snap-insight-sample.csv", { type: "text/csv" });
+                      processFile(file);
+                    }}
+                    className="text-indigo-400 hover:text-indigo-300 text-sm underline underline-offset-2"
+                  >
+                    Try sample CSV
+                  </button>
+                </div>
               </>
             )}
           </div>

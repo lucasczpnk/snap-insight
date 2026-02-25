@@ -55,6 +55,20 @@ See `webapp/SETUP.md` for detailed setup (Supabase bucket, migrations, env vars)
 
 **https://snap-insight.vercel.app**
 
+Use the **Try sample CSV** link on the landing page for instant demo—no file needed.
+
+---
+
+## Demo Readiness Checklist
+
+- [ ] Supabase project created; `.env.local` configured
+- [ ] `uploads` bucket exists; RLS allows authenticated uploads
+- [ ] Migration `00001_initial_schema.sql` run
+- [ ] GitHub OAuth configured in Supabase (optional: Google)
+- [ ] Stripe Price ID and Webhook set for Pro tier
+- [ ] `CRON_SECRET` set in Vercel for cleanup job
+- [ ] Sample CSV at `/sample.csv` for zero-friction demo
+
 ---
 
 ## License

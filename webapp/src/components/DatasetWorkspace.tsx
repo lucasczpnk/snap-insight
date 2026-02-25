@@ -127,8 +127,31 @@ export function DatasetWorkspace({ dataset, onUploadNew, shareUrl, isSharedView 
                   {schemaSummary.string > 0 && (
                     <li>• {schemaSummary.string} text column(s)</li>
                   )}
+                  {dataset.relationships && dataset.relationships.length > 0 && (
+                    <li>• {dataset.relationships.length} detected relationship(s)</li>
+                  )}
                 </ul>
               </div>
+
+              {dataset.relationships && dataset.relationships.length > 0 && (
+                <div className="glass-card p-4 border border-indigo-500/20">
+                  <h3 className="text-sm font-semibold text-gray-300 mb-2">Inferred relationships</h3>
+                  <ul className="text-sm text-gray-400 space-y-1.5">
+                    {dataset.relationships.map((r, i) => (
+                      <li key={`${r.source}-${r.target}-${i}`} className="flex items-center gap-2">
+                        <span className="font-mono text-indigo-300">{r.source}</span>
+                        <span className="text-gray-500">→</span>
+                        <span className="font-mono text-indigo-300">{r.target}</span>
+                        <span className="text-gray-500 text-xs">
+                          ({r.type.replace(/_/g, " ")}
+                          {r.overlap != null ? `, ${(r.overlap * 100).toFixed(0)}% overlap` : ""}
+                          , {(r.confidence * 100).toFixed(0)}% confidence)
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {qualityFlags.length > 0 && (
                 <div className="glass-card p-4 border border-amber-500/20">

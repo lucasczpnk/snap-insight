@@ -64,6 +64,22 @@ export async function GET(
     .eq("dataset_id", id)
     .single();
 
+  const { data: relationships } = await admin
+    .from("inferred_relationships")
+    .select("source_column_id, target_column_id, relationship_type, confidence_score, overlap_ratio")
+    .eq("dataset_id", id);
+
+  const columnIdToName = new Map((columns || []).map((c: { id: string; name: string }) => [c.id, c.name]));
+  const relationshipsWithNames = (relationships || []).map(
+    (r: { source_column_id: string; target_column_id: string; relationship_type: string; confidence_score: number; overlap_ratio: number | null }) => ({
+      source: columnIdToName.get(r.source_column_id) ?? "?",
+      target: columnIdToName.get(r.target_column_id) ?? "?",
+      type: r.relationship_type,
+      confidence: r.confidence_score,
+      overlap: r.overlap_ratio,
+    })
+  );
+
   const columnsWithSamples = (columns || []).map((col: Record<string, unknown>) => {
     const stats = Array.isArray(col.column_statistics)
       ? col.column_statistics[0]
@@ -97,5 +113,6 @@ export async function GET(
     },
     columns: columnsWithSamples,
     profile: profile || null,
+    relationships: relationshipsWithNames,
   });
 }

@@ -10,10 +10,19 @@ export interface ColumnMetadata {
   isCategoricalCandidate?: boolean;
 }
 
+export interface InferredRelationshipInfo {
+  source: string;
+  target: string;
+  type: string;
+  confidence: number;
+  overlap?: number | null;
+}
+
 export interface DatasetInfo {
   id?: string;
   name: string;
   rowCount: number;
   columnCount: number;
   columns: ColumnMetadata[];
+  relationships?: InferredRelationshipInfo[];
 }

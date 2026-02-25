@@ -124,7 +124,82 @@ export function profileColumns(
   });
 }
 
-export function computeDatasetProfile(columns: ColumnProfile[]): {
+export interface InferredRelationship {
+  source_name: string;
+  target_name: string;
+  relationship_type: "possible_foreign_key" | "value_overlap" | "naming_similarity";
+  confidence_score: number;
+  overlap_ratio: number | null;
+}
+
+const OVERLAP_THRESHOLD = 0.75;
+const MAX_RELATIONSHIPS = 30;
+
+export function inferRelationships(
+  profiles: ColumnProfile[],
+  rows: Record<string, string>[]
+): InferredRelationship[] {
+  const results: InferredRelationship[] = [];
+  const nameToProfile = new Map(profiles.map((p) => [p.name, p]));
+
+  // 1. Naming similarity: x_id → id (possible FK when id column exists)
+  const hasIdCol = profiles.some((c) => c.name === "id");
+  if (hasIdCol) {
+    for (const col of profiles) {
+      if (!/_id$/i.test(col.name) || col.name === "id") continue;
+      results.push({
+        source_name: col.name,
+        target_name: "id",
+        relationship_type: "naming_similarity",
+        confidence_score: 0.75,
+        overlap_ratio: null,
+      });
+    }
+  }
+
+  // 2. Value overlap: if most values of col A appear in col B, A might reference B
+  for (let i = 0; i < profiles.length; i++) {
+    for (let j = 0; j < profiles.length; j++) {
+      if (i === j) continue;
+      const src = profiles[i];
+      const tgt = profiles[j];
+      if (!src.samples.length || !tgt.samples.length) continue;
+      const srcValues = new Set(rows.map((r) => String(r[src.name] ?? "").trim()).filter(Boolean));
+      const tgtValues = new Set(rows.map((r) => String(r[tgt.name] ?? "").trim()).filter(Boolean));
+      if (srcValues.size === 0) continue;
+      const overlap = [...srcValues].filter((v) => tgtValues.has(v)).length;
+      const ratio = overlap / srcValues.size;
+      if (ratio >= OVERLAP_THRESHOLD && overlap > 0) {
+        results.push({
+          source_name: src.name,
+          target_name: tgt.name,
+          relationship_type: "value_overlap",
+          confidence_score: Math.min(0.95, 0.5 + ratio * 0.5),
+          overlap_ratio: Math.round(ratio * 100) / 100,
+        });
+      }
+    }
+  }
+
+  // Dedupe by source_name+target_name, keep highest confidence
+  const byKey = new Map<string, InferredRelationship>();
+  for (const r of results) {
+    const key = `${r.source_name}→${r.target_name}`;
+    const existing = byKey.get(key);
+    if (!existing || r.confidence_score > existing.confidence_score) {
+      byKey.set(key, r);
+    }
+  }
+
+  return [...byKey.values()]
+    .sort((a, b) => b.confidence_score - a.confidence_score)
+    .slice(0, MAX_RELATIONSHIPS);
+}
+
+export function computeDatasetProfile(
+  columns: ColumnProfile[],
+  relationships?: InferredRelationship[]
+): {
   probable_primary_keys: number;
   categorical_columns: number;
   datetime_columns: number;
@@ -140,7 +215,7 @@ export function computeDatasetProfile(columns: ColumnProfile[]): {
   const numeric_columns = columns.filter(
     (c) => c.inferred_type === "integer" || c.inferred_type === "float"
   ).length;
-  const detected_relationships = 0; // TODO: infer from value overlap
+  const detected_relationships = relationships?.length ?? 0;
   const totalCols = columns.length;
   const withTypes = columns.filter((c) => c.inferred_type !== "string").length;
   const quality_score = totalCols ? Math.round((withTypes / totalCols) * 100) : 0;

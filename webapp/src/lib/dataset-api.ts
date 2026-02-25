@@ -20,6 +20,7 @@ export function mapApiResponseToDatasetInfo(api: {
     statistics?: { min_numeric?: number; max_numeric?: number; min_datetime?: string; max_datetime?: string };
     samples: string[];
   }>;
+  relationships?: Array<{ source: string; target: string; type: string; confidence: number; overlap?: number | null }>;
 }): DatasetInfo {
   return {
     id: api.dataset.id,
@@ -37,5 +38,6 @@ export function mapApiResponseToDatasetInfo(api: {
       isPrimaryKeyCandidate: c.is_primary_key_candidate ?? false,
       isCategoricalCandidate: c.is_categorical_candidate ?? false,
     })),
+    relationships: api.relationships ?? [],
   };
 }

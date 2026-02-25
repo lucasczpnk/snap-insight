@@ -1,0 +1,11 @@
+id,user_id,category,amount,created_at
+1,101,Electronics,99.50,2024-01-15
+2,102,Clothing,45.00,2024-01-16
+3,101,Electronics,199.00,2024-01-17
+4,103,Books,24.99,2024-01-18
+5,102,Clothing,78.50,2024-01-19
+6,101,Books,14.99,2024-01-20
+7,103,Electronics,349.99,2024-01-21
+8,102,Books,32.00,2024-01-22
+9,104,Clothing,55.00,2024-01-23
+10,103,Electronics,89.99,2024-01-24

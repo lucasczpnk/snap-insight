@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { TIERS, type Tier } from "@/lib/supabase";
-import { profileColumns, computeDatasetProfile } from "@/lib/data-profiler";
+import { profileColumns, computeDatasetProfile, inferRelationships } from "@/lib/data-profiler";
 import Papa from "papaparse";
 
 const MAX_ROWS_TO_PROFILE = 50_000;
@@ -159,7 +159,10 @@ export async function POST(request: Request) {
     }
 
     const profiles = profileColumns(rows, headers);
-    const summary = computeDatasetProfile(profiles);
+    const relationships = inferRelationships(profiles, rows);
+    const summary = computeDatasetProfile(profiles, relationships);
+
+    const columnIdByName = new Map<string, string>();
 
     for (let i = 0; i < profiles.length; i++) {
       const p = profiles[i];
@@ -180,6 +183,7 @@ export async function POST(request: Request) {
         .single();
 
       if (colRow) {
+        columnIdByName.set(p.name, colRow.id);
         await admin.from("column_statistics").insert({
           column_id: colRow.id,
           min_numeric: p.min_numeric,
@@ -195,6 +199,21 @@ export async function POST(request: Request) {
             sample_value: sample,
           });
         }
+      }
+    }
+
+    for (const rel of relationships) {
+      const sourceId = columnIdByName.get(rel.source_name);
+      const targetId = columnIdByName.get(rel.target_name);
+      if (sourceId && targetId) {
+        await admin.from("inferred_relationships").insert({
+          dataset_id: datasetId,
+          source_column_id: sourceId,
+          target_column_id: targetId,
+          relationship_type: rel.relationship_type,
+          confidence_score: rel.confidence_score,
+          overlap_ratio: rel.overlap_ratio,
+        });
       }
     }
 
