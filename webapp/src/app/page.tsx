@@ -23,6 +23,7 @@ export default function Home() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [loginForUpgrade, setLoginForUpgrade] = useState(false);
   const [pendingUpgradeFile, setPendingUpgradeFile] = useState<File | null>(null);
+  const [activatingSubscription, setActivatingSubscription] = useState(false);
 
   const [supabase, setSupabase] = useState<ReturnType<typeof createClientIfConfigured>>(null);
 
@@ -130,12 +131,32 @@ export default function Home() {
   useEffect(() => {
     if (!mounted || !processFile) return;
     const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-    if (params.get("checkout") === "success" && params.get("retry") === "1") {
-      window.history.replaceState({}, "", window.location.pathname);
-      consumePendingUpload().then((file) => {
-        if (file) processFile(file);
-      });
-    }
+    if (params.get("checkout") !== "success" || params.get("retry") !== "1") return;
+    window.history.replaceState({}, "", window.location.pathname);
+
+    const pollAndRetry = async () => {
+      const file = await consumePendingUpload();
+      if (!file) return;
+      setActivatingSubscription(true);
+      const maxAttempts = 10;
+      for (let i = 0; i < maxAttempts; i++) {
+        try {
+          const res = await fetch("/api/tier");
+          const { tier } = (await res.json()) as { tier: string };
+          if (tier === "paid") {
+            setActivatingSubscription(false);
+            processFile(file);
+            return;
+          }
+        } catch {
+          // Ignore
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      setActivatingSubscription(false);
+      processFile(file);
+    };
+    pollAndRetry();
   }, [mounted, processFile]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -425,10 +446,12 @@ export default function Home() {
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
           >
-            {isProcessing ? (
+            {isProcessing || activatingSubscription ? (
               <div className="py-12">
                 <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                <p className="text-gray-400">Processing your dataset...</p>
+                <p className="text-gray-400">
+                  {activatingSubscription ? "Activating your Pro subscription..." : "Processing your dataset..."}
+                </p>
               </div>
             ) : (
               <>
