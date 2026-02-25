@@ -75,13 +75,23 @@ export default function Home() {
       const uploadRes = await fetch("/api/upload", { method: "POST", body: formData });
       if (uploadRes.ok) {
         const { datasetId } = (await uploadRes.json()) as { datasetId: string };
-        const getRes = await fetch(`/api/datasets/${datasetId}`);
-        if (getRes.ok) {
-          const apiData = await getRes.json();
-          setDataset(mapApiResponseToDatasetInfo(apiData));
-          setIsProcessing(false);
-          return;
+        for (let attempt = 0; attempt < 60; attempt++) {
+          const getRes = await fetch(`/api/datasets/${datasetId}`);
+          if (getRes.ok) {
+            const apiData = await getRes.json();
+            setDataset(mapApiResponseToDatasetInfo(apiData));
+            setIsProcessing(false);
+            return;
+          }
+          if (getRes.status === 202) {
+            await new Promise((r) => setTimeout(r, 2000));
+            continue;
+          }
+          break;
         }
+        setUploadError("Processing timed out. Try the share link in a moment or upload again.");
+        setIsProcessing(false);
+        return;
       }
       // API rejected: tier limit (413) or validation (400) — show upgrade modal with constraint cause, do not fall back
       if (uploadRes.status === 413 || uploadRes.status === 400) {
@@ -408,6 +418,12 @@ export default function Home() {
       {authError && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/50 text-red-200 text-sm">
           Sign-in failed. Please try again.
+        </div>
+      )}
+      {uploadError && !showUpgradeModal && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-lg bg-amber-500/20 border border-amber-500/50 text-amber-200 text-sm flex items-center gap-2">
+          {uploadError}
+          <button type="button" onClick={() => setUploadError(null)} className="text-amber-300 hover:text-amber-100">Dismiss</button>
         </div>
       )}
       {showUpgradeModal && uploadError && (

@@ -68,6 +68,11 @@ The dataset cleanup job (`/api/cron/cleanup`) is **not scheduled** on Vercel Hob
 
 ---
 
+## Submission Checklist
+
+- [ ] **GitHub repo set to public** (Settings → General → Visibility)
+- [ ] App tree and routes in `webapp/routes.md` match imports
+
 ## Demo Readiness Checklist
 
 - [ ] Supabase project created; `.env.local` configured

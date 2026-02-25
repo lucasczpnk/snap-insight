@@ -6,12 +6,16 @@ import { DatasetWorkspace } from "@/components/DatasetWorkspace";
 import { mapApiResponseToDatasetInfo } from "@/lib/dataset-api";
 import type { DatasetInfo } from "@/types/dataset";
 
+const POLL_INTERVAL_MS = 2000;
+const MAX_POLL_ATTEMPTS = 60;
+
 export default function WorkspaceByIdPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string | undefined;
   const [dataset, setDataset] = useState<DatasetInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -20,22 +24,43 @@ export default function WorkspaceByIdPage() {
       setError("Missing dataset ID");
       return;
     }
-    fetch(`/api/datasets/${id}`)
-      .then((res) => {
-        if (!res.ok) {
-          if (res.status === 404) throw new Error("Dataset not found or expired");
-          if (res.status === 202) throw new Error("Dataset is still processing");
-          throw new Error("Failed to load dataset");
+    let cancelled = false;
+
+    async function poll() {
+      for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
+        if (cancelled) return;
+        const res = await fetch(`/api/datasets/${id}`);
+        if (cancelled) return;
+        if (res.status === 200) {
+          const apiData = await res.json();
+          setDataset(mapApiResponseToDatasetInfo(apiData));
+          setLoading(false);
+          setProcessing(false);
+          return;
         }
-        return res.json();
-      })
-      .then((apiData) => {
-        setDataset(mapApiResponseToDatasetInfo(apiData));
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to load");
-      })
-      .finally(() => setLoading(false));
+        if (res.status === 404) {
+          setError("Dataset not found or expired");
+          setLoading(false);
+          setProcessing(false);
+          return;
+        }
+        if (res.status === 202) {
+          setProcessing(true);
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+          continue;
+        }
+        setError("Failed to load dataset");
+        setLoading(false);
+        setProcessing(false);
+        return;
+      }
+      setError("Processing timed out. Please try again.");
+      setLoading(false);
+      setProcessing(false);
+    }
+
+    poll();
+    return () => { cancelled = true; };
   }, [id]);
 
   if (loading) {
@@ -43,7 +68,7 @@ export default function WorkspaceByIdPage() {
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading dataset...</p>
+          <p className="text-gray-400">{processing ? "Processing dataset..." : "Loading dataset..."}</p>
         </div>
       </div>
     );

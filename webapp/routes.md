@@ -2,9 +2,11 @@
 
 Quick reference for judges: all Next.js pages, API routes, and key components.
 
+> **Before submission:** Ensure the GitHub repo is **public**. All paths below exist under `webapp/`.
+
 ---
 
-## App Tree
+## App Tree (`src/app/`)
 
 ```
 webapp/src/
@@ -46,6 +48,22 @@ webapp/src/
 └── types/
     └── dataset.ts               # ColumnMetadata, DatasetInfo
 ```
+
+---
+
+## Exact File Paths (match `@/` imports)
+
+| Import | File path |
+|--------|-----------|
+| `@/components/DatasetWorkspace` | `webapp/src/components/DatasetWorkspace.tsx` |
+| `@/lib/supabase/client` | `webapp/src/lib/supabase/client.ts` |
+| `@/lib/supabase/server` | `webapp/src/lib/supabase/server.ts` |
+| `@/lib/supabase/admin` | `webapp/src/lib/supabase/admin.ts` |
+| `@/lib/supabase` | `webapp/src/lib/supabase.ts` |
+| `@/lib/data-profiler` | `webapp/src/lib/data-profiler.ts` |
+| `@/lib/dataset-api` | `webapp/src/lib/dataset-api.ts` |
+| `@/lib/pending-upload` | `webapp/src/lib/pending-upload.ts` |
+| `@/types/dataset` | `webapp/src/types/dataset.ts` |
 
 ---
 
