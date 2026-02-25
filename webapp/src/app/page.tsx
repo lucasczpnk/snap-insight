@@ -185,6 +185,7 @@ export default function Home() {
             )}
             Continue with GitHub
           </button>
+          {/* Google auth — disabled for now
           <button
             type="button"
             onClick={() => handleSignIn("google")}
@@ -203,6 +204,7 @@ export default function Home() {
             )}
             Continue with Google
           </button>
+          */}
         </div>
         <p className="text-center text-gray-500 text-sm mt-6">
           Or continue as <button type="button" onClick={() => setShowLoginModal(false)} className="text-indigo-400 hover:underline">guest</button> (limited features)
