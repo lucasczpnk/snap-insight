@@ -1,8 +1,29 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+async function upsertSubscription(
+  userId: string | null,
+  stripeCustomerId: string | null,
+  status: string,
+  currentPeriodEnd: string | null
+) {
+  if (!userId) return;
+  const admin = createAdminClient();
+  await admin.from("user_profiles").upsert(
+    {
+      id: userId,
+      stripe_customer_id: stripeCustomerId,
+      subscription_status: status,
+      subscription_tier: status === "active" ? "paid" : null,
+      current_period_end: currentPeriodEnd,
+    },
+    { onConflict: "id" }
+  );
+}
 
 export async function POST(request: Request) {
   if (!stripeSecretKey || !webhookSecret) {
@@ -29,25 +50,84 @@ export async function POST(request: Request) {
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object as Stripe.Checkout.Session;
-        // TODO: Create/update user_profiles.subscription_status when user_profiles + auth linking exist
-        console.log("[Webhook] checkout.session.completed", session.id, "customer:", session.customer);
+        const userId = session.client_reference_id as string | null;
+        const stripeCustomerId = typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
+        let currentPeriodEnd: string | null = null;
+
+        if (session.subscription) {
+          const subId = typeof session.subscription === "string" ? session.subscription : (session.subscription as { id?: string })?.id;
+          if (subId) {
+            const sub = await new Stripe(stripeSecretKey).subscriptions.retrieve(subId);
+            const periodEnd = (sub as { current_period_end?: number }).current_period_end;
+            currentPeriodEnd = periodEnd ? new Date(periodEnd * 1000).toISOString() : null;
+          }
+        }
+
+        await upsertSubscription(userId, stripeCustomerId, "active", currentPeriodEnd);
         break;
       }
-      case "customer.subscription.created":
       case "customer.subscription.updated": {
-        const sub = event.data.object as Stripe.Subscription;
-        // TODO: Update user_profiles.subscription_tier, current_period_end
-        console.log("[Webhook]", event.type, sub.id, "status:", sub.status);
+        const sub = event.data.object as Stripe.Subscription & { current_period_end?: number };
+        const stripeCustomerId = typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
+        const currentPeriodEnd = sub.current_period_end
+          ? new Date(sub.current_period_end * 1000).toISOString()
+          : null;
+
+        if (sub.metadata?.supabase_user_id) {
+          await upsertSubscription(
+            sub.metadata.supabase_user_id,
+            stripeCustomerId,
+            sub.status,
+            currentPeriodEnd
+          );
+        } else {
+          const admin = createAdminClient();
+          const { data: profile } = await admin
+            .from("user_profiles")
+            .select("id")
+            .eq("stripe_customer_id", stripeCustomerId)
+            .single();
+          if (profile) {
+            await upsertSubscription(profile.id, stripeCustomerId, sub.status, currentPeriodEnd);
+          }
+        }
+        break;
+      }
+      case "customer.subscription.created": {
+        const sub = event.data.object as Stripe.Subscription & { current_period_end?: number };
+        const stripeCustomerId = typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
+        const currentPeriodEnd = sub.current_period_end
+          ? new Date(sub.current_period_end * 1000).toISOString()
+          : null;
+
+        const admin = createAdminClient();
+        const { data: profile } = await admin
+          .from("user_profiles")
+          .select("id")
+          .eq("stripe_customer_id", stripeCustomerId)
+          .single();
+        if (profile) {
+          await upsertSubscription(profile.id, stripeCustomerId, sub.status, currentPeriodEnd);
+        }
         break;
       }
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
-        // TODO: Set user_profiles.subscription_status = 'canceled'
-        console.log("[Webhook] subscription.deleted", sub.id);
+        const stripeCustomerId = typeof sub.customer === "string" ? sub.customer : sub.customer?.id;
+
+        const admin = createAdminClient();
+        const { data: profile } = await admin
+          .from("user_profiles")
+          .select("id")
+          .eq("stripe_customer_id", stripeCustomerId)
+          .single();
+        if (profile) {
+          await upsertSubscription(profile.id, stripeCustomerId, "canceled", null);
+        }
         break;
       }
       default:
-        console.log("[Webhook] Unhandled event:", event.type);
+        break;
     }
   } catch (err) {
     console.error("Stripe webhook handler error:", err);

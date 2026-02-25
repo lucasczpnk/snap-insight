@@ -8,9 +8,18 @@ import Papa from "papaparse";
 const MAX_ROWS_TO_PROFILE = 50_000;
 const ROW_ESTIMATE_SAMPLE_BYTES = 1024 * 1024; // 1MB
 
-function resolveTier(userId: string | null): Tier {
+async function resolveTier(admin: ReturnType<typeof createAdminClient>, userId: string | null): Promise<Tier> {
   if (!userId) return "free_anon";
-  // TODO: when user_profiles + Stripe exist, check subscription_status
+  const { data: profile } = await admin
+    .from("user_profiles")
+    .select("subscription_status, current_period_end")
+    .eq("id", userId)
+    .single();
+
+  if (profile?.subscription_status === "active") {
+    const periodEnd = profile.current_period_end ? new Date(profile.current_period_end).getTime() : 0;
+    if (periodEnd > Date.now()) return "paid";
+  }
   return "free_auth";
 }
 
@@ -25,11 +34,12 @@ async function estimateRowCount(file: File): Promise<number> {
 
 export async function POST(request: Request) {
   try {
+    const admin = createAdminClient();
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    const tier = resolveTier(user?.id ?? null);
+    const tier = await resolveTier(admin, user?.id ?? null);
     const limits = TIERS[tier];
 
     const formData = await request.formData();
@@ -67,7 +77,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const admin = createAdminClient();
     const retentionHours = limits.retentionHours;
     const expiresAt = new Date(Date.now() + retentionHours * 60 * 60 * 1000);
 

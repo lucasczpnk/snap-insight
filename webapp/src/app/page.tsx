@@ -8,6 +8,7 @@ import type { User as SupabaseUser } from "@supabase/supabase-js";
 import type { ColumnMetadata, DatasetInfo } from "@/types/dataset";
 import { mapApiResponseToDatasetInfo } from "@/lib/dataset-api";
 import { DatasetWorkspace } from "@/components/DatasetWorkspace";
+import { storePendingUpload, consumePendingUpload } from "@/lib/pending-upload";
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
@@ -20,6 +21,8 @@ export default function Home() {
   const [authError, setAuthError] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [loginForUpgrade, setLoginForUpgrade] = useState(false);
+  const [pendingUpgradeFile, setPendingUpgradeFile] = useState<File | null>(null);
 
   const [supabase, setSupabase] = useState<ReturnType<typeof createClientIfConfigured>>(null);
 
@@ -46,6 +49,12 @@ export default function Home() {
   useEffect(() => {
     const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
     setAuthError(params.get("auth_error") === "1");
+    if (params.get("upgrade") === "1") setLoginForUpgrade(true);
+    if (params.get("checkout") === "success" && params.get("retry") !== "1") {
+      if (typeof window !== "undefined") {
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
   }, []);
 
   const processFile = useCallback(async (file: File) => {
@@ -65,10 +74,14 @@ export default function Home() {
           return;
         }
       }
-      // API rejected: tier limit (413) or validation (400) — show upgrade modal, do not fall back
+      // API rejected: tier limit (413) or validation (400) — show upgrade modal with constraint cause, do not fall back
       if (uploadRes.status === 413 || uploadRes.status === 400) {
         const body = await uploadRes.json().catch(() => ({}));
-        setUploadError((body?.error as string) || uploadRes.statusText || "Upload rejected");
+        const constraintMessage = (body?.error as string)?.trim();
+        setUploadError(
+          constraintMessage || (uploadRes.status === 413 ? "File or row limit exceeded for your plan. Upgrade to Pro for more." : uploadRes.statusText || "Upload rejected")
+        );
+        setPendingUpgradeFile(file);
         setShowUpgradeModal(true);
         setIsProcessing(false);
         return;
@@ -114,6 +127,17 @@ export default function Home() {
     });
   }, []);
 
+  useEffect(() => {
+    if (!mounted || !processFile) return;
+    const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    if (params.get("checkout") === "success" && params.get("retry") === "1") {
+      window.history.replaceState({}, "", window.location.pathname);
+      consumePendingUpload().then((file) => {
+        if (file) processFile(file);
+      });
+    }
+  }, [mounted, processFile]);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
@@ -135,7 +159,8 @@ export default function Home() {
       setAuthError(false);
       try {
         const origin = typeof window !== "undefined" ? window.location.origin : "";
-        const redirectTo = `${origin}/auth/callback`;
+        const next = loginForUpgrade ? "/?upgrade=1" : "/";
+        const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider,
           options: { redirectTo },
@@ -152,7 +177,7 @@ export default function Home() {
         setAuthLoading(null);
       }
     },
-    [supabase]
+    [supabase, loginForUpgrade]
   );
 
   const handleSignOut = useCallback(async () => {
@@ -161,30 +186,74 @@ export default function Home() {
   }, [supabase]);
 
   const handleUpgrade = useCallback(async () => {
+    if (!user) {
+      if (pendingUpgradeFile) {
+        try {
+          await storePendingUpload(pendingUpgradeFile);
+        } catch {
+          // Ignore
+        }
+      }
+      setShowUpgradeModal(false);
+      setLoginForUpgrade(true);
+      setShowLoginModal(true);
+      return;
+    }
     setShowUpgradeModal(false);
     setUploadError(null);
+    const fileToRetry = pendingUpgradeFile;
+    if (fileToRetry) {
+      try {
+        await storePendingUpload(fileToRetry);
+      } catch {
+        // Ignore storage errors
+      }
+      setPendingUpgradeFile(null);
+    }
+    const hasPendingFile = !!fileToRetry || loginForUpgrade;
     try {
-      const res = await fetch("/api/stripe/checkout", { method: "POST" });
+      const returnTo = hasPendingFile ? "/?checkout=success&retry=1" : "/?checkout=success";
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          returnTo,
+          userId: user.id,
+          customerEmail: user.email ?? undefined,
+        }),
+      });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data?.url) {
         window.location.href = data.url;
       } else if (res.status === 503) {
         setUploadError(data?.error || "Upgrade is not configured yet.");
         setShowUpgradeModal(true);
+        setPendingUpgradeFile(fileToRetry ?? null);
       } else {
         setUploadError(data?.error || "Failed to start checkout.");
         setShowUpgradeModal(true);
+        setPendingUpgradeFile(fileToRetry ?? null);
       }
     } catch {
       setUploadError("Failed to start checkout.");
       setShowUpgradeModal(true);
+      setPendingUpgradeFile(fileToRetry ?? null);
     }
-  }, []);
+  }, [user, pendingUpgradeFile, loginForUpgrade]);
 
   const handlePricingAction = useCallback((action: "auth" | "stripe" | "disabled") => {
     if (action === "auth") setShowLoginModal(true);
     else if (action === "stripe") handleUpgrade();
   }, [handleUpgrade]);
+
+  useEffect(() => {
+    if (!user || !loginForUpgrade || !mounted) return;
+    setLoginForUpgrade(false);
+    if (typeof window !== "undefined" && window.location.search.includes("upgrade=1")) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    handleUpgrade();
+  }, [user, loginForUpgrade, mounted, handleUpgrade]);
 
   // Show loading while hydrating
   if (!mounted) {
@@ -207,13 +276,15 @@ export default function Home() {
   // Login Modal
   const LoginModal = () => (
     <div className="fixed inset-0 z-[100] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowLoginModal(false)} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowLoginModal(false); setLoginForUpgrade(false); }} />
       <div className="relative glass-card p-8 max-w-md w-full mx-4">
-        <button onClick={() => setShowLoginModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
+        <button onClick={() => { setShowLoginModal(false); setLoginForUpgrade(false); }} className="absolute top-4 right-4 text-gray-400 hover:text-white">
           <X className="w-5 h-5" />
         </button>
         <h2 className="text-2xl font-bold mb-2">Welcome to Snap Insight</h2>
-        <p className="text-gray-400 mb-6">Sign in to unlock more features and longer data retention.</p>
+        <p className="text-gray-400 mb-6">
+          {loginForUpgrade ? "Sign in to upgrade to Pro and unlock higher limits." : "Sign in to unlock more features and longer data retention."}
+        </p>
         <div className="space-y-3">
           <button
             type="button"
@@ -250,7 +321,7 @@ export default function Home() {
           */}
         </div>
         <p className="text-center text-gray-500 text-sm mt-6">
-          Or continue as <button type="button" onClick={() => setShowLoginModal(false)} className="text-indigo-400 hover:underline">guest</button> (limited features)
+          Or continue as <button type="button" onClick={() => { setShowLoginModal(false); setLoginForUpgrade(false); }} className="text-indigo-400 hover:underline">guest</button> (limited features)
         </p>
       </div>
     </div>
@@ -267,10 +338,10 @@ export default function Home() {
       )}
       {showUpgradeModal && uploadError && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowUpgradeModal(false); setUploadError(null); }} />
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowUpgradeModal(false); setUploadError(null); setPendingUpgradeFile(null); }} />
           <div className="relative glass-card p-8 max-w-md w-full mx-4">
             <button
-              onClick={() => { setShowUpgradeModal(false); setUploadError(null); }}
+              onClick={() => { setShowUpgradeModal(false); setUploadError(null); setPendingUpgradeFile(null); }}
               className="absolute top-4 right-4 text-gray-400 hover:text-white"
             >
               <X className="w-5 h-5" />
@@ -287,7 +358,7 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                onClick={() => { setShowUpgradeModal(false); setUploadError(null); }}
+                onClick={() => { setShowUpgradeModal(false); setUploadError(null); setPendingUpgradeFile(null); }}
                 className="flex-1 btn-secondary py-3"
               >
                 Dismiss
@@ -337,7 +408,7 @@ export default function Home() {
         <div className="max-w-4xl mx-auto text-center">
           <div className="opacity-0 animate-[fadeIn_0.6s_ease-out_forwards]">
             <h1 className="text-5xl md:text-7xl font-bold mb-6">
-              <span className="text-gradient">Upload Data →</span>
+              <span className="text-gradient">Upload Data ↓</span>
               <br />
               Instantly Understand It
             </h1>
