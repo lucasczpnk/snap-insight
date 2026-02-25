@@ -20,6 +20,12 @@ export default function Home() {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [authError, setAuthError] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadConstraint, setUploadConstraint] = useState<{
+    type: "file_size" | "row_count";
+    actual: number;
+    limit: number;
+    unit: string;
+  } | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [loginForUpgrade, setLoginForUpgrade] = useState(false);
   const [pendingUpgradeFile, setPendingUpgradeFile] = useState<File | null>(null);
@@ -61,6 +67,7 @@ export default function Home() {
   const processFile = useCallback(async (file: File) => {
     setIsProcessing(true);
     setUploadError(null);
+    setUploadConstraint(null);
     try {
       const formData = new FormData();
       formData.set("file", file);
@@ -79,8 +86,19 @@ export default function Home() {
       if (uploadRes.status === 413 || uploadRes.status === 400) {
         const body = await uploadRes.json().catch(() => ({}));
         const constraintMessage = (body?.error as string)?.trim();
+        const constraint = body?.constraint as { type?: string; actual?: number; limit?: number; unit?: string } | undefined;
         setUploadError(
           constraintMessage || (uploadRes.status === 413 ? "File or row limit exceeded for your plan. Upgrade to Pro for more." : uploadRes.statusText || "Upload rejected")
+        );
+        setUploadConstraint(
+          constraint?.type && typeof constraint.actual === "number" && typeof constraint.limit === "number"
+            ? {
+                type: constraint.type as "file_size" | "row_count",
+                actual: constraint.actual,
+                limit: constraint.limit,
+                unit: constraint.unit ?? (constraint.type === "file_size" ? "MB" : "rows"),
+              }
+            : null
         );
         setPendingUpgradeFile(file);
         setShowUpgradeModal(true);
@@ -222,6 +240,7 @@ export default function Home() {
     }
     setShowUpgradeModal(false);
     setUploadError(null);
+    setUploadConstraint(null);
     const fileToRetry = pendingUpgradeFile;
     if (fileToRetry) {
       try {
@@ -359,16 +378,23 @@ export default function Home() {
       )}
       {showUpgradeModal && uploadError && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowUpgradeModal(false); setUploadError(null); setPendingUpgradeFile(null); }} />
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowUpgradeModal(false); setUploadError(null); setUploadConstraint(null); setPendingUpgradeFile(null); }} />
           <div className="relative glass-card p-8 max-w-md w-full mx-4">
             <button
-              onClick={() => { setShowUpgradeModal(false); setUploadError(null); setPendingUpgradeFile(null); }}
+              onClick={() => { setShowUpgradeModal(false); setUploadError(null); setUploadConstraint(null); setPendingUpgradeFile(null); }}
               className="absolute top-4 right-4 text-gray-400 hover:text-white"
             >
               <X className="w-5 h-5" />
             </button>
             <h2 className="text-2xl font-bold mb-2">{uploadError.includes("exceeds") || uploadError.includes("limit") ? "Limit Reached" : "Upgrade"}</h2>
-            <p className="text-gray-400 mb-6">{uploadError}</p>
+            <p className={`text-gray-400 ${uploadConstraint ? "mb-2" : "mb-6"}`}>{uploadError}</p>
+            {uploadConstraint && (
+              <p className="text-red-400 text-sm font-medium mb-6">
+                {uploadConstraint.type === "file_size"
+                  ? `${uploadConstraint.actual} MB / ${uploadConstraint.limit} MB limit`
+                  : `${uploadConstraint.actual.toLocaleString()} rows / ${uploadConstraint.limit.toLocaleString()} limit`}
+              </p>
+            )}
             <div className="flex gap-3">
               <button
                 type="button"
@@ -379,7 +405,7 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                onClick={() => { setShowUpgradeModal(false); setUploadError(null); setPendingUpgradeFile(null); }}
+                onClick={() => { setShowUpgradeModal(false); setUploadError(null); setUploadConstraint(null); setPendingUpgradeFile(null); }}
                 className="flex-1 btn-secondary py-3"
               >
                 Dismiss

@@ -61,7 +61,13 @@ export async function POST(request: Request) {
     if (fileSizeMB > limits.maxFileSizeMB) {
       return NextResponse.json(
         {
-          error: `File exceeds ${tier === "free_anon" ? "Free" : "your"} tier limit (${limits.maxFileSizeMB}MB). Upgrade to Pro for larger files.`,
+          error: `File size exceeds your plan limit. Your file is too large for the current tier.`,
+          constraint: {
+            type: "file_size",
+            actual: Math.round(fileSizeMB * 10) / 10,
+            limit: limits.maxFileSizeMB,
+            unit: "MB",
+          },
         },
         { status: 413 }
       );
@@ -71,7 +77,13 @@ export async function POST(request: Request) {
     if (estimatedRows > limits.maxRows) {
       return NextResponse.json(
         {
-          error: `Estimated row count (${estimatedRows.toLocaleString()}) exceeds limit (${limits.maxRows.toLocaleString()}). Upgrade to Pro for more rows.`,
+          error: `Row count exceeds your plan limit. Your dataset has too many rows for the current tier.`,
+          constraint: {
+            type: "row_count",
+            actual: estimatedRows,
+            limit: limits.maxRows,
+            unit: "rows",
+          },
         },
         { status: 413 }
       );
