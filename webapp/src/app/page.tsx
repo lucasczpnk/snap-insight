@@ -90,16 +90,22 @@ export default function Home() {
         setUploadError(
           constraintMessage || (uploadRes.status === 413 ? "File or row limit exceeded for your plan. Upgrade to Pro for more." : uploadRes.statusText || "Upload rejected")
         );
-        setUploadConstraint(
-          constraint?.type && typeof constraint.actual === "number" && typeof constraint.limit === "number"
-            ? {
-                type: constraint.type as "file_size" | "row_count",
-                actual: constraint.actual,
-                limit: constraint.limit,
-                unit: constraint.unit ?? (constraint.type === "file_size" ? "MB" : "rows"),
-              }
-            : null
-        );
+        // Use API constraint when present; else derive file-size from client File when 413 (e.g. if platform rejected before our route)
+        let resolvedConstraint: { type: "file_size" | "row_count"; actual: number; limit: number; unit: string } | null = null;
+        const actualNum = constraint?.actual != null ? Number(constraint.actual) : NaN;
+        const limitNum = constraint?.limit != null ? Number(constraint.limit) : NaN;
+        if (constraint?.type && !Number.isNaN(actualNum) && !Number.isNaN(limitNum)) {
+          resolvedConstraint = {
+            type: constraint.type as "file_size" | "row_count",
+            actual: actualNum,
+            limit: limitNum,
+            unit: constraint.unit ?? (constraint.type === "file_size" ? "MB" : "rows"),
+          };
+        } else if (uploadRes.status === 413 && file.size > 10 * 1024 * 1024) {
+          const fileSizeMB = Math.round((file.size / (1024 * 1024)) * 10) / 10;
+          resolvedConstraint = { type: "file_size", actual: fileSizeMB, limit: 10, unit: "MB" };
+        }
+        setUploadConstraint(resolvedConstraint);
         setPendingUpgradeFile(file);
         setShowUpgradeModal(true);
         setIsProcessing(false);
@@ -571,7 +577,7 @@ export default function Home() {
             {[
               { name: "Free", price: "$0", period: "forever", description: "Perfect for trying things out", features: ["Up to 100k rows", "10MB file size", "15 min retention", "Basic analysis"], cta: "Get Started", popular: false, action: "auth" as const },
               { name: "Pro", price: "$19", period: "/month", description: "For regular data work", features: ["Up to 300k rows", "35MB file size", "30 day retention", "Advanced analysis", "Priority support", "Shareable links"], cta: "Upgrade Now", popular: true, action: "stripe" as const },
-              { name: "Team", price: "$99", period: "/month", description: "For teams and agencies", features: ["Unlimited rows", "100MB file size", "Unlimited retention", "Team collaboration", "API access", "Custom branding"], cta: "Available soon", popular: false, action: "disabled" as const },
+              { name: "Team", price: "$59", period: "/month", description: "For teams and agencies", features: ["Unlimited rows", "100MB file size", "Unlimited retention", "Team collaboration", "API access", "Custom branding"], cta: "Available soon", popular: false, action: "disabled" as const },
             ].map((plan) => (
               <div key={plan.name} className={`glass-card p-6 relative ${plan.popular ? "border-indigo-500" : ""}`}>
                 {plan.popular && <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full text-xs font-semibold">Most Popular</div>}
