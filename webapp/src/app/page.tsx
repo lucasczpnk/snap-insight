@@ -30,6 +30,7 @@ export default function Home() {
   const [loginForUpgrade, setLoginForUpgrade] = useState(false);
   const [pendingUpgradeFile, setPendingUpgradeFile] = useState<File | null>(null);
   const [activatingSubscription, setActivatingSubscription] = useState(false);
+  const [postCheckoutActivating, setPostCheckoutActivating] = useState(false); // true when poll timed out, waiting for webhook
 
   const [supabase, setSupabase] = useState<ReturnType<typeof createClientIfConfigured>>(null);
 
@@ -162,13 +163,14 @@ export default function Home() {
       const file = await consumePendingUpload();
       if (!file) return;
       setActivatingSubscription(true);
-      const maxAttempts = 10;
+      const maxAttempts = 25; // ~37s to allow Stripe webhook to update user_profiles
       for (let i = 0; i < maxAttempts; i++) {
         try {
           const res = await fetch("/api/tier");
           const { tier } = (await res.json()) as { tier: string };
           if (tier === "paid") {
             setActivatingSubscription(false);
+            setPostCheckoutActivating(false);
             processFile(file);
             return;
           }
@@ -178,7 +180,11 @@ export default function Home() {
         await new Promise((r) => setTimeout(r, 1500));
       }
       setActivatingSubscription(false);
-      processFile(file);
+      setPostCheckoutActivating(true);
+      setPendingUpgradeFile(file);
+      setUploadError("Your Pro subscription is activating. Please wait a moment and click Retry.");
+      setUploadConstraint(null);
+      setShowUpgradeModal(true);
     };
     pollAndRetry();
   }, [mounted, processFile]);
@@ -247,6 +253,7 @@ export default function Home() {
     setShowUpgradeModal(false);
     setUploadError(null);
     setUploadConstraint(null);
+    setPostCheckoutActivating(false);
     const fileToRetry = pendingUpgradeFile;
     if (fileToRetry) {
       try {
@@ -286,6 +293,27 @@ export default function Home() {
       setPendingUpgradeFile(fileToRetry ?? null);
     }
   }, [user, pendingUpgradeFile, loginForUpgrade]);
+
+  const handleRetryAfterCheckout = useCallback(async () => {
+    const file = pendingUpgradeFile;
+    if (!file) return;
+    try {
+      const res = await fetch("/api/tier");
+      const { tier } = (await res.json()) as { tier: string };
+      if (tier === "paid") {
+        setShowUpgradeModal(false);
+        setUploadError(null);
+        setUploadConstraint(null);
+        setPostCheckoutActivating(false);
+        setPendingUpgradeFile(null);
+        processFile(file);
+      } else {
+        setUploadError("Subscription still activating. Please wait a few seconds and click Retry again.");
+      }
+    } catch {
+      setUploadError("Could not check subscription. Please try again.");
+    }
+  }, [pendingUpgradeFile, processFile]);
 
   const handlePricingAction = useCallback((action: "auth" | "stripe" | "disabled") => {
     if (action === "auth") setShowLoginModal(true);
@@ -384,15 +412,17 @@ export default function Home() {
       )}
       {showUpgradeModal && uploadError && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowUpgradeModal(false); setUploadError(null); setUploadConstraint(null); setPendingUpgradeFile(null); }} />
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowUpgradeModal(false); setUploadError(null); setUploadConstraint(null); setPendingUpgradeFile(null); setPostCheckoutActivating(false); }} />
           <div className="relative glass-card p-8 max-w-md w-full mx-4">
             <button
-              onClick={() => { setShowUpgradeModal(false); setUploadError(null); setUploadConstraint(null); setPendingUpgradeFile(null); }}
+              onClick={() => { setShowUpgradeModal(false); setUploadError(null); setUploadConstraint(null); setPendingUpgradeFile(null); setPostCheckoutActivating(false); }}
               className="absolute top-4 right-4 text-gray-400 hover:text-white"
             >
               <X className="w-5 h-5" />
             </button>
-            <h2 className="text-2xl font-bold mb-2">{uploadError.includes("exceeds") || uploadError.includes("limit") ? "Limit Reached" : "Upgrade"}</h2>
+            <h2 className="text-2xl font-bold mb-2">
+              {postCheckoutActivating ? "Subscription Activating" : uploadError.includes("exceeds") || uploadError.includes("limit") ? "Limit Reached" : "Upgrade"}
+            </h2>
             <p className={`text-gray-400 ${uploadConstraint ? "mb-2" : "mb-6"}`}>{uploadError}</p>
             {uploadConstraint && (
               <p className="text-red-400 text-sm font-medium mb-6">
@@ -402,16 +432,26 @@ export default function Home() {
               </p>
             )}
             <div className="flex gap-3">
+              {postCheckoutActivating ? (
+                <button
+                  type="button"
+                  onClick={handleRetryAfterCheckout}
+                  className="flex-1 btn-primary py-3"
+                >
+                  Retry upload
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleUpgrade}
+                  className="flex-1 btn-primary py-3"
+                >
+                  Upgrade to Pro
+                </button>
+              )}
               <button
                 type="button"
-                onClick={handleUpgrade}
-                className="flex-1 btn-primary py-3"
-              >
-                Upgrade to Pro
-              </button>
-              <button
-                type="button"
-                onClick={() => { setShowUpgradeModal(false); setUploadError(null); setUploadConstraint(null); setPendingUpgradeFile(null); }}
+                onClick={() => { setShowUpgradeModal(false); setUploadError(null); setUploadConstraint(null); setPendingUpgradeFile(null); setPostCheckoutActivating(false); }}
                 className="flex-1 btn-secondary py-3"
               >
                 Dismiss
