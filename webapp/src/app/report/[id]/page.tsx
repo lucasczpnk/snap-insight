@@ -6,7 +6,8 @@ import { DatasetWorkspace } from "@/components/DatasetWorkspace";
 import { mapApiResponseToDatasetInfo } from "@/lib/dataset-api";
 import type { DatasetInfo } from "@/types/dataset";
 
-export default function WorkspaceByIdPage() {
+/** Shareable report page — publicly accessible, no auth required. Replicates workspace view. */
+export default function ReportByIdPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string | undefined;
@@ -17,15 +18,15 @@ export default function WorkspaceByIdPage() {
   useEffect(() => {
     if (!id) {
       setLoading(false);
-      setError("Missing dataset ID");
+      setError("Missing report ID");
       return;
     }
     fetch(`/api/datasets/${id}`)
       .then((res) => {
         if (!res.ok) {
-          if (res.status === 404) throw new Error("Dataset not found or expired");
-          if (res.status === 202) throw new Error("Dataset is still processing");
-          throw new Error("Failed to load dataset");
+          if (res.status === 404) throw new Error("Report not found or expired");
+          if (res.status === 202) throw new Error("Report is still processing");
+          throw new Error("Failed to load report");
         }
         return res.json();
       })
@@ -43,7 +44,7 @@ export default function WorkspaceByIdPage() {
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading dataset...</p>
+          <p className="text-gray-400">Loading report...</p>
         </div>
       </div>
     );
@@ -53,7 +54,7 @@ export default function WorkspaceByIdPage() {
     return (
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
         <div className="text-center">
-          <p className="text-red-400 mb-4">{error ?? "Dataset not found"}</p>
+          <p className="text-red-400 mb-4">{error ?? "Report not found"}</p>
           <button type="button" onClick={() => router.push("/")} className="btn-primary">
             Back to Home
           </button>

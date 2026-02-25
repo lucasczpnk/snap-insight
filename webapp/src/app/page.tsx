@@ -18,6 +18,8 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState<"github" | "google" | null>(null);
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [authError, setAuthError] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const [supabase, setSupabase] = useState<ReturnType<typeof createClientIfConfigured>>(null);
 
@@ -48,6 +50,7 @@ export default function Home() {
 
   const processFile = useCallback(async (file: File) => {
     setIsProcessing(true);
+    setUploadError(null);
     try {
       const formData = new FormData();
       formData.set("file", file);
@@ -62,8 +65,16 @@ export default function Home() {
           return;
         }
       }
+      // API rejected: tier limit (413) or validation (400) — show upgrade modal, do not fall back
+      if (uploadRes.status === 413 || uploadRes.status === 400) {
+        const body = await uploadRes.json().catch(() => ({}));
+        setUploadError((body?.error as string) || uploadRes.statusText || "Upload rejected");
+        setShowUpgradeModal(true);
+        setIsProcessing(false);
+        return;
+      }
     } catch (_) {
-      // Fall through to client-side parsing
+      // Network/server error — fall through to client-side parsing
     }
     Papa.parse(file, {
       header: true,
@@ -121,14 +132,20 @@ export default function Home() {
     async (provider: "github" | "google") => {
       if (!supabase) return;
       setAuthLoading(provider);
+      setAuthError(false);
       try {
         const origin = typeof window !== "undefined" ? window.location.origin : "";
-        const { error } = await supabase.auth.signInWithOAuth({
+        const redirectTo = `${origin}/auth/callback`;
+        const { data, error } = await supabase.auth.signInWithOAuth({
           provider,
-          options: { redirectTo: `${origin}/auth/callback` },
+          options: { redirectTo },
         });
-        if (error) setAuthError(true);
-        // On success, Supabase redirects to provider; no need to reset loading
+        if (error) {
+          setAuthError(true);
+        } else if (data?.url) {
+          window.location.href = data.url;
+        }
+        // On success with data.url, we redirect; no need to reset loading here
       } catch {
         setAuthError(true);
       } finally {
@@ -143,6 +160,32 @@ export default function Home() {
     setShowLoginModal(false);
   }, [supabase]);
 
+  const handleUpgrade = useCallback(async () => {
+    setShowUpgradeModal(false);
+    setUploadError(null);
+    try {
+      const res = await fetch("/api/stripe/checkout", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.url) {
+        window.location.href = data.url;
+      } else if (res.status === 503) {
+        setUploadError(data?.error || "Upgrade is not configured yet.");
+        setShowUpgradeModal(true);
+      } else {
+        setUploadError(data?.error || "Failed to start checkout.");
+        setShowUpgradeModal(true);
+      }
+    } catch {
+      setUploadError("Failed to start checkout.");
+      setShowUpgradeModal(true);
+    }
+  }, []);
+
+  const handlePricingAction = useCallback((action: "auth" | "stripe" | "disabled") => {
+    if (action === "auth") setShowLoginModal(true);
+    else if (action === "stripe") handleUpgrade();
+  }, [handleUpgrade]);
+
   // Show loading while hydrating
   if (!mounted) {
     return <div className="min-h-screen bg-[#0a0a0f]" />;
@@ -151,7 +194,7 @@ export default function Home() {
   // Dataset Workspace View
   if (dataset) {
     // Use relative URL to avoid hydration mismatch (same on server and client)
-    const shareUrl = dataset.id ? `/workspace/${dataset.id}` : null;
+    const shareUrl = dataset.id ? `/report/${dataset.id}` : null;
     return (
       <DatasetWorkspace
         dataset={dataset}
@@ -220,6 +263,37 @@ export default function Home() {
       {authError && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-lg bg-red-500/20 border border-red-500/50 text-red-200 text-sm">
           Sign-in failed. Please try again.
+        </div>
+      )}
+      {showUpgradeModal && uploadError && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setShowUpgradeModal(false); setUploadError(null); }} />
+          <div className="relative glass-card p-8 max-w-md w-full mx-4">
+            <button
+              onClick={() => { setShowUpgradeModal(false); setUploadError(null); }}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h2 className="text-2xl font-bold mb-2">{uploadError.includes("exceeds") || uploadError.includes("limit") ? "Limit Reached" : "Upgrade"}</h2>
+            <p className="text-gray-400 mb-6">{uploadError}</p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleUpgrade}
+                className="flex-1 btn-primary py-3"
+              >
+                Upgrade to Pro
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowUpgradeModal(false); setUploadError(null); }}
+                className="flex-1 btn-secondary py-3"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {/* Navbar */}
@@ -376,7 +450,7 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[
               { name: "Free", price: "$0", period: "forever", description: "Perfect for trying things out", features: ["Up to 100k rows", "10MB file size", "15 min retention", "Basic analysis"], cta: "Get Started", popular: false, action: "auth" as const },
-              { name: "Pro", price: "$29", period: "/month", description: "For regular data work", features: ["Up to 300k rows", "35MB file size", "30 day retention", "Advanced analysis", "Priority support", "Shareable links"], cta: "Upgrade Now", popular: true, action: "auth" as const },
+              { name: "Pro", price: "$19", period: "/month", description: "For regular data work", features: ["Up to 300k rows", "35MB file size", "30 day retention", "Advanced analysis", "Priority support", "Shareable links"], cta: "Upgrade Now", popular: true, action: "stripe" as const },
               { name: "Team", price: "$99", period: "/month", description: "For teams and agencies", features: ["Unlimited rows", "100MB file size", "Unlimited retention", "Team collaboration", "API access", "Custom branding"], cta: "Available soon", popular: false, action: "disabled" as const },
             ].map((plan) => (
               <div key={plan.name} className={`glass-card p-6 relative ${plan.popular ? "border-indigo-500" : ""}`}>
@@ -398,8 +472,16 @@ export default function Home() {
                 {plan.action === "auth" ? (
                   <button
                     type="button"
-                    onClick={() => setShowLoginModal(true)}
+                    onClick={() => handlePricingAction("auth")}
                     className={`w-full ${plan.popular ? "btn-primary" : "btn-secondary"}`}
+                  >
+                    {plan.cta}
+                  </button>
+                ) : plan.action === "stripe" ? (
+                  <button
+                    type="button"
+                    onClick={() => handlePricingAction("stripe")}
+                    className="w-full btn-primary"
                   >
                     {plan.cta}
                   </button>

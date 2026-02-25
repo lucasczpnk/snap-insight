@@ -9,6 +9,7 @@ project-guidelines.md
 website-clone-guide.md
 AGENTS.md
 flexisoft_reference.png
+webapp/SETUP.md
 
 # -----------------------------------------------------------------------------
 # Next.js
@@ -72,6 +73,7 @@ Thumbs.db
 # -----------------------------------------------------------------------------
 coverage/
 .nyc_output/
+large_test_dataset.csv
 
 # -----------------------------------------------------------------------------
 # Supabase (local dev)

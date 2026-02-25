@@ -1,16 +1,29 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import { FileSpreadsheet, BarChart3, AlertTriangle, Info } from "lucide-react";
+import React, { useState, useMemo, useCallback } from "react";
+import { FileSpreadsheet, BarChart3, AlertTriangle, Info, Share2, Copy, Check } from "lucide-react";
 import type { DatasetInfo } from "@/types/dataset";
 
 interface DatasetWorkspaceProps {
   dataset: DatasetInfo;
   onUploadNew: () => void;
   shareUrl?: string | null;
+  /** When true, we're viewing a shared report (from /workspace/[id]) — read-only, show Back to Home */
+  isSharedView?: boolean;
 }
 
-export function DatasetWorkspace({ dataset, onUploadNew, shareUrl }: DatasetWorkspaceProps) {
+export function DatasetWorkspace({ dataset, onUploadNew, shareUrl, isSharedView }: DatasetWorkspaceProps) {
+  const [copied, setCopied] = useState(false);
+
+  const fullShareUrl = shareUrl && typeof window !== "undefined" ? `${window.location.origin}${shareUrl.startsWith("/") ? "" : "/"}${shareUrl}` : null;
+  const handleCopyLink = useCallback(() => {
+    const url = isSharedView ? (typeof window !== "undefined" ? window.location.href : "") : (fullShareUrl || "");
+    if (url && typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [fullShareUrl, isSharedView]);
   const [activeTab, setActiveTab] = useState<"overview" | "insights">("overview");
   const [expandedColumn, setExpandedColumn] = useState<string | null>(null);
 
@@ -46,19 +59,30 @@ export function DatasetWorkspace({ dataset, onUploadNew, shareUrl }: DatasetWork
                 {dataset.rowCount.toLocaleString()} rows × {dataset.columnCount} columns
               </p>
             </div>
-            <div className="flex items-center gap-3">
-              {shareUrl && (
+            <div className="flex flex-wrap items-center gap-3">
+              {shareUrl && !isSharedView && (
                 <a
                   href={shareUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="btn-secondary text-sm"
+                  className="btn-secondary text-sm inline-flex items-center gap-2"
                 >
+                  <Share2 className="w-4 h-4" />
                   Open share link
                 </a>
               )}
+              {(shareUrl || isSharedView) && (
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="btn-primary text-sm inline-flex items-center gap-2"
+                >
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copied ? "Copied!" : "Copy report link"}
+                </button>
+              )}
               <button onClick={onUploadNew} className="btn-secondary text-sm">
-                Upload New File
+                {isSharedView ? "Back to Home" : "Upload New File"}
               </button>
             </div>
           </div>
