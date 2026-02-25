@@ -55,7 +55,10 @@ See `webapp/SETUP.md` for detailed setup (Supabase bucket, migrations, env vars)
 
 **https://snap-insight.vercel.app**
 
-Use the **Try sample CSV** link on the landing page for instant demo—no file needed.
+- **Try sample CSV** on the landing page for instant demo—no file needed.
+- **Working share link** (sample data): [https://snap-insight.vercel.app/report/00000000-0000-4000-8000-000000000001](https://snap-insight.vercel.app/report/00000000-0000-4000-8000-000000000001)
+
+Requires running `supabase/migrations/00002_seed_demo_dataset.sql` in Supabase SQL Editor (after `00001_initial_schema.sql`).
 
 ---
 
@@ -69,7 +72,7 @@ The dataset cleanup job (`/api/cron/cleanup`) is **not scheduled** on Vercel Hob
 
 - [ ] Supabase project created; `.env.local` configured
 - [ ] `uploads` bucket exists; RLS allows authenticated uploads
-- [ ] Migration `00001_initial_schema.sql` run
+- [ ] Migrations run: `00001_initial_schema.sql`, then `00002_seed_demo_dataset.sql` (for share link)
 - [ ] GitHub OAuth configured in Supabase (optional: Google)
 - [ ] Stripe Price ID and Webhook set for Pro tier
 - [ ] Sample CSV at `/sample.csv` for zero-friction demo

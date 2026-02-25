@@ -132,7 +132,7 @@ export interface InferredRelationship {
   overlap_ratio: number | null;
 }
 
-const OVERLAP_THRESHOLD = 0.75;
+const OVERLAP_THRESHOLD = 0.8; // 80%+ overlap = probable FK
 const MAX_RELATIONSHIPS = 30;
 
 export function inferRelationships(
@@ -140,9 +140,8 @@ export function inferRelationships(
   rows: Record<string, string>[]
 ): InferredRelationship[] {
   const results: InferredRelationship[] = [];
-  const nameToProfile = new Map(profiles.map((p) => [p.name, p]));
 
-  // 1. Naming similarity: x_id → id (possible FK when id column exists)
+  // 1. Naming: x_id → id (probable FK when id column exists)
   const hasIdCol = profiles.some((c) => c.name === "id");
   if (hasIdCol) {
     for (const col of profiles) {
@@ -150,14 +149,14 @@ export function inferRelationships(
       results.push({
         source_name: col.name,
         target_name: "id",
-        relationship_type: "naming_similarity",
-        confidence_score: 0.75,
+        relationship_type: "possible_foreign_key",
+        confidence_score: 0.85,
         overlap_ratio: null,
       });
     }
   }
 
-  // 2. Value overlap: if most values of col A appear in col B, A might reference B
+  // 2. Value overlap: 80%+ of A's values in B → probable FK (A references B)
   for (let i = 0; i < profiles.length; i++) {
     for (let j = 0; j < profiles.length; j++) {
       if (i === j) continue;
@@ -173,8 +172,8 @@ export function inferRelationships(
         results.push({
           source_name: src.name,
           target_name: tgt.name,
-          relationship_type: "value_overlap",
-          confidence_score: Math.min(0.95, 0.5 + ratio * 0.5),
+          relationship_type: "possible_foreign_key",
+          confidence_score: Math.min(0.95, 0.6 + ratio * 0.4),
           overlap_ratio: Math.round(ratio * 100) / 100,
         });
       }

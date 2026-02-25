@@ -48,7 +48,9 @@ This guide lists all environment variables, config files, and Supabase dashboard
 
 ### 3. Database Schema
 - **Location:** SQL Editor
-- **Run:** `supabase/migrations/00001_initial_schema.sql`
+- **Run (in order):**
+  1. `supabase/migrations/00001_initial_schema.sql`
+  2. `supabase/migrations/00002_seed_demo_dataset.sql` — seeds sample report for share link: `/report/00000000-0000-4000-8000-000000000001`
 
 ### 4. OAuth Providers
 - **Location:** [Authentication → Providers](https://supabase.com/dashboard/project/_/auth/providers)

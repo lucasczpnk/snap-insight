@@ -1,8 +1,36 @@
 "use client";
 
 import React, { useState, useMemo, useCallback } from "react";
-import { FileSpreadsheet, BarChart3, AlertTriangle, Info, Share2, Copy, Check } from "lucide-react";
-import type { DatasetInfo } from "@/types/dataset";
+import { FileSpreadsheet, BarChart3, AlertTriangle, Info, Share2, Copy, Check, GitBranch } from "lucide-react";
+import type { DatasetInfo, InferredRelationshipInfo } from "@/types/dataset";
+
+function SchemaGraph({ columns, relationships }: { columns: string[]; relationships: InferredRelationshipInfo[] }) {
+  const related = new Set(relationships.flatMap((r) => [r.source, r.target]));
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {columns.map((name) => (
+        <span
+          key={name}
+          className={`px-2.5 py-1 rounded-md text-xs font-mono ${
+            related.has(name) ? "bg-indigo-500/30 text-indigo-200 border border-indigo-500/50" : "bg-gray-800/50 text-gray-400"
+          }`}
+        >
+          {name}
+        </span>
+      ))}
+      {relationships.length > 0 && (
+        <span className="text-gray-500 text-xs mx-1">|</span>
+      )}
+      {relationships.map((r, i) => (
+        <span key={`${r.source}-${r.target}-${i}`} className="flex items-center gap-1 text-xs">
+          <span className="font-mono text-amber-400/90">{r.source}</span>
+          <span className="text-indigo-500">→</span>
+          <span className="font-mono text-emerald-400/90">{r.target}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
 
 interface DatasetWorkspaceProps {
   dataset: DatasetInfo;
@@ -33,8 +61,9 @@ export function DatasetWorkspace({ dataset, onUploadNew, shareUrl, isSharedView 
     const datetime = dataset.columns.filter((c) => c.type === "date").length;
     const string = dataset.columns.filter((c) => c.type === "string").length;
     const primaryKeyCandidates = dataset.columns.filter((c) => c.isPrimaryKeyCandidate).length;
-    return { numeric, categorical, datetime, string, primaryKeyCandidates };
-  }, [dataset.columns]);
+    const probableFkCount = dataset.relationships?.length ?? 0;
+    return { numeric, categorical, datetime, string, primaryKeyCandidates, probableFkCount };
+  }, [dataset.columns, dataset.relationships]);
 
   const qualityFlags = useMemo(() => {
     const flags: { column: string; message: string }[] = [];
@@ -127,30 +156,41 @@ export function DatasetWorkspace({ dataset, onUploadNew, shareUrl, isSharedView 
                   {schemaSummary.string > 0 && (
                     <li>• {schemaSummary.string} text column(s)</li>
                   )}
-                  {dataset.relationships && dataset.relationships.length > 0 && (
-                    <li>• {dataset.relationships.length} detected relationship(s)</li>
+                  {schemaSummary.probableFkCount > 0 && (
+                    <li>• {schemaSummary.probableFkCount} probable FK{schemaSummary.probableFkCount !== 1 ? "s" : ""} detected</li>
                   )}
                 </ul>
               </div>
 
               {dataset.relationships && dataset.relationships.length > 0 && (
-                <div className="glass-card p-4 border border-indigo-500/20">
-                  <h3 className="text-sm font-semibold text-gray-300 mb-2">Inferred relationships</h3>
-                  <ul className="text-sm text-gray-400 space-y-1.5">
-                    {dataset.relationships.map((r, i) => (
-                      <li key={`${r.source}-${r.target}-${i}`} className="flex items-center gap-2">
-                        <span className="font-mono text-indigo-300">{r.source}</span>
-                        <span className="text-gray-500">→</span>
-                        <span className="font-mono text-indigo-300">{r.target}</span>
-                        <span className="text-gray-500 text-xs">
-                          ({r.type.replace(/_/g, " ")}
-                          {r.overlap != null ? `, ${(r.overlap * 100).toFixed(0)}% overlap` : ""}
-                          , {(r.confidence * 100).toFixed(0)}% confidence)
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                <>
+                  <div className="glass-card p-4 border border-indigo-500/20">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                      <GitBranch className="w-4 h-4 text-indigo-400" />
+                      Schema graph
+                    </h3>
+                    <SchemaGraph
+                      columns={dataset.columns.map((c) => c.name)}
+                      relationships={dataset.relationships}
+                    />
+                  </div>
+                  <div className="glass-card p-4 border border-indigo-500/20">
+                    <h3 className="text-sm font-semibold text-gray-300 mb-2">Inferred relationships</h3>
+                    <ul className="text-sm text-gray-400 space-y-1.5">
+                      {dataset.relationships.map((r, i) => (
+                        <li key={`${r.source}-${r.target}-${i}`} className="flex items-center gap-2">
+                          <span className="font-mono text-indigo-300">{r.source}</span>
+                          <span className="text-gray-500">→</span>
+                          <span className="font-mono text-indigo-300">{r.target}</span>
+                          <span className="text-gray-500 text-xs">
+                            {r.overlap != null ? `${(r.overlap * 100).toFixed(0)}% overlap` : "naming"}
+                            · {(r.confidence * 100).toFixed(0)}% confidence
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
               )}
 
               {qualityFlags.length > 0 && (
